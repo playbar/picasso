@@ -21,12 +21,10 @@ import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.os.SystemClock;
 import android.widget.ImageView;
 
@@ -105,13 +103,11 @@ final class PicassoDrawable extends BitmapDrawable {
           placeholder.draw(canvas);
         }
 
+        // setAlpha will call invalidateSelf and drive the animation.
         int partialAlpha = (int) (alpha * normalized);
         super.setAlpha(partialAlpha);
         super.draw(canvas);
         super.setAlpha(alpha);
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.GINGERBREAD_MR1) {
-          invalidateSelf();
-        }
       }
     }
 
@@ -144,22 +140,19 @@ final class PicassoDrawable extends BitmapDrawable {
 
   private void drawDebugIndicator(Canvas canvas) {
     DEBUG_PAINT.setColor(WHITE);
-    Path path = getTrianglePath(new Point(0, 0), (int) (16 * density));
+    Path path = getTrianglePath(0, 0, (int) (16 * density));
     canvas.drawPath(path, DEBUG_PAINT);
 
     DEBUG_PAINT.setColor(loadedFrom.debugColor);
-    path = getTrianglePath(new Point(0, 0), (int) (15 * density));
+    path = getTrianglePath(0, 0, (int) (15 * density));
     canvas.drawPath(path, DEBUG_PAINT);
   }
 
-  private static Path getTrianglePath(Point p1, int width) {
-    Point p2 = new Point(p1.x + width, p1.y);
-    Point p3 = new Point(p1.x, p1.y + width);
-
-    Path path = new Path();
-    path.moveTo(p1.x, p1.y);
-    path.lineTo(p2.x, p2.y);
-    path.lineTo(p3.x, p3.y);
+  private static Path getTrianglePath(int x1, int y1, int width) {
+    final Path path = new Path();
+    path.moveTo(x1, y1);
+    path.lineTo(x1 + width, y1);
+    path.lineTo(x1, y1 + width);
 
     return path;
   }

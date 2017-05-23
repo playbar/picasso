@@ -21,8 +21,7 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.annotation.Config;
+import org.robolectric.RobolectricGradleTestRunner;
 
 import static android.graphics.Bitmap.Config.ARGB_8888;
 import static com.squareup.picasso.Picasso.LoadedFrom.MEMORY;
@@ -36,8 +35,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@RunWith(RobolectricTestRunner.class)
-@Config(manifest = Config.NONE)
+@RunWith(RobolectricGradleTestRunner.class)
 public class TargetActionTest {
 
   @Test(expected = AssertionError.class)
@@ -64,8 +62,9 @@ public class TargetActionTest {
     TargetAction request =
         new TargetAction(mock(Picasso.class), target, null, 0, 0, errorDrawable, URI_KEY_1, null,
             0);
-    request.error();
-    verify(target).onBitmapFailed(errorDrawable);
+    Exception e = new RuntimeException();
+    request.error(e);
+    verify(target).onBitmapFailed(e, errorDrawable);
   }
 
   @Test
@@ -82,8 +81,9 @@ public class TargetActionTest {
 
     when(context.getResources()).thenReturn(res);
     when(res.getDrawable(RESOURCE_ID_1)).thenReturn(errorDrawable);
-    request.error();
-    verify(target).onBitmapFailed(errorDrawable);
+    Exception e = new RuntimeException();
+    request.error(e);
+    verify(target).onBitmapFailed(e, errorDrawable);
   }
 
   @Test public void recyclingInSuccessThrowsException() {
@@ -92,7 +92,7 @@ public class TargetActionTest {
         bitmap.recycle();
       }
 
-      @Override public void onBitmapFailed(Drawable errorDrawable) {
+      @Override public void onBitmapFailed(Exception e, Drawable errorDrawable) {
         throw new AssertionError();
       }
 

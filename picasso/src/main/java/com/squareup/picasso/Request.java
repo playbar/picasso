@@ -17,6 +17,11 @@ package com.squareup.picasso;
 
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.support.annotation.DrawableRes;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.annotation.Px;
+import android.view.Gravity;
 import com.squareup.picasso.Picasso.Priority;
 import java.util.ArrayList;
 import java.util.List;
@@ -64,6 +69,8 @@ public final class Request {
    * This is mutually exclusive with {@link #centerInside}.
    */
   public final boolean centerCrop;
+  /** If centerCrop is set, controls alignment of centered image */
+  public final int centerCropGravity;
   /**
    * True if the final image should use the 'centerInside' scale technique.
    * <p>
@@ -88,8 +95,9 @@ public final class Request {
 
   private Request(Uri uri, int resourceId, String stableKey, List<Transformation> transformations,
       int targetWidth, int targetHeight, boolean centerCrop, boolean centerInside,
-      boolean onlyScaleDown, float rotationDegrees, float rotationPivotX, float rotationPivotY,
-      boolean hasRotationPivot, boolean purgeable, Bitmap.Config config, Priority priority) {
+      int centerCropGravity, boolean onlyScaleDown, float rotationDegrees,
+      float rotationPivotX, float rotationPivotY, boolean hasRotationPivot,
+      boolean purgeable, Bitmap.Config config, Priority priority) {
     this.uri = uri;
     this.resourceId = resourceId;
     this.stableKey = stableKey;
@@ -102,6 +110,7 @@ public final class Request {
     this.targetHeight = targetHeight;
     this.centerCrop = centerCrop;
     this.centerInside = centerInside;
+    this.centerCropGravity = centerCropGravity;
     this.onlyScaleDown = onlyScaleDown;
     this.rotationDegrees = rotationDegrees;
     this.rotationPivotX = rotationPivotX;
@@ -201,6 +210,7 @@ public final class Request {
     private int targetWidth;
     private int targetHeight;
     private boolean centerCrop;
+    private int centerCropGravity;
     private boolean centerInside;
     private boolean onlyScaleDown;
     private float rotationDegrees;
@@ -213,12 +223,12 @@ public final class Request {
     private Priority priority;
 
     /** Start building a request using the specified {@link Uri}. */
-    public Builder(Uri uri) {
+    public Builder(@NonNull Uri uri) {
       setUri(uri);
     }
 
     /** Start building a request using the specified resource ID. */
-    public Builder(int resourceId) {
+    public Builder(@DrawableRes int resourceId) {
       setResourceId(resourceId);
     }
 
@@ -236,6 +246,7 @@ public final class Request {
       targetHeight = request.targetHeight;
       centerCrop = request.centerCrop;
       centerInside = request.centerInside;
+      centerCropGravity = request.centerCropGravity;
       rotationDegrees = request.rotationDegrees;
       rotationPivotX = request.rotationPivotX;
       rotationPivotY = request.rotationPivotY;
@@ -243,7 +254,7 @@ public final class Request {
       purgeable = request.purgeable;
       onlyScaleDown = request.onlyScaleDown;
       if (request.transformations != null) {
-        transformations = new ArrayList<Transformation>(request.transformations);
+        transformations = new ArrayList<>(request.transformations);
       }
       config = request.config;
       priority = request.priority;
@@ -266,7 +277,7 @@ public final class Request {
      * <p>
      * This will clear an image resource ID if one is set.
      */
-    public Builder setUri(Uri uri) {
+    public Builder setUri(@NonNull Uri uri) {
       if (uri == null) {
         throw new IllegalArgumentException("Image URI may not be null.");
       }
@@ -280,7 +291,7 @@ public final class Request {
      * <p>
      * This will clear an image Uri if one is set.
      */
-    public Builder setResourceId(int resourceId) {
+    public Builder setResourceId(@DrawableRes int resourceId) {
       if (resourceId == 0) {
         throw new IllegalArgumentException("Image resource ID may not be 0.");
       }
@@ -293,7 +304,7 @@ public final class Request {
      * Set the stable key to be used instead of the URI or resource ID when caching.
      * Two requests with the same value are considered to be for the same resource.
      */
-    public Builder stableKey(String stableKey) {
+    public Builder stableKey(@Nullable String stableKey) {
       this.stableKey = stableKey;
       return this;
     }
@@ -302,7 +313,7 @@ public final class Request {
      * Resize the image to the specified size in pixels.
      * Use 0 as desired dimension to resize keeping aspect ratio.
      */
-    public Builder resize(int targetWidth, int targetHeight) {
+    public Builder resize(@Px int targetWidth, @Px int targetHeight) {
       if (targetWidth < 0) {
         throw new IllegalArgumentException("Width must be positive number or 0.");
       }
@@ -332,16 +343,27 @@ public final class Request {
      * requested bounds and then crops the extra.
      */
     public Builder centerCrop() {
+      return centerCrop(Gravity.CENTER);
+    }
+
+    /**
+     * Crops an image inside of the bounds specified by {@link #resize(int, int)} rather than
+     * distorting the aspect ratio. This cropping technique scales the image so that it fills the
+     * requested bounds, aligns it using provided gravity parameter and then crops the extra.
+     */
+    public Builder centerCrop(int alignGravity) {
       if (centerInside) {
         throw new IllegalStateException("Center crop can not be used after calling centerInside");
       }
       centerCrop = true;
+      centerCropGravity = alignGravity;
       return this;
     }
 
     /** Clear the center crop transformation flag, if set. */
     public Builder clearCenterCrop() {
       centerCrop = false;
+      centerCropGravity = Gravity.CENTER;
       return this;
     }
 
@@ -411,13 +433,16 @@ public final class Request {
     }
 
     /** Decode the image using the specified config. */
-    public Builder config(Bitmap.Config config) {
+    public Builder config(@NonNull Bitmap.Config config) {
+      if (config == null) {
+        throw new IllegalArgumentException("config == null");
+      }
       this.config = config;
       return this;
     }
 
     /** Execute request using the specified priority. */
-    public Builder priority(Priority priority) {
+    public Builder priority(@NonNull Priority priority) {
       if (priority == null) {
         throw new IllegalArgumentException("Priority invalid.");
       }
@@ -433,7 +458,7 @@ public final class Request {
      * <p>
      * Custom transformations will always be run after the built-in transformations.
      */
-    public Builder transform(Transformation transformation) {
+    public Builder transform(@NonNull Transformation transformation) {
       if (transformation == null) {
         throw new IllegalArgumentException("Transformation must not be null.");
       }
@@ -441,7 +466,7 @@ public final class Request {
         throw new IllegalArgumentException("Transformation key must not be null.");
       }
       if (transformations == null) {
-        transformations = new ArrayList<Transformation>(2);
+        transformations = new ArrayList<>(2);
       }
       transformations.add(transformation);
       return this;
@@ -452,7 +477,7 @@ public final class Request {
      * <p>
      * Custom transformations will always be run after the built-in transformations.
      */
-    public Builder transform(List<? extends Transformation> transformations) {
+    public Builder transform(@NonNull List<? extends Transformation> transformations) {
       if (transformations == null) {
         throw new IllegalArgumentException("Transformation list must not be null.");
       }
@@ -479,8 +504,8 @@ public final class Request {
         priority = Priority.NORMAL;
       }
       return new Request(uri, resourceId, stableKey, transformations, targetWidth, targetHeight,
-          centerCrop, centerInside, onlyScaleDown, rotationDegrees, rotationPivotX, rotationPivotY,
-          hasRotationPivot, purgeable, config, priority);
+          centerCrop, centerInside, centerCropGravity, onlyScaleDown, rotationDegrees,
+          rotationPivotX, rotationPivotY, hasRotationPivot, purgeable, config, priority);
     }
   }
 }

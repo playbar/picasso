@@ -17,6 +17,8 @@ package com.squareup.picasso;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.support.annotation.NonNull;
+
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -35,7 +37,7 @@ public class LruCache implements Cache {
   private int missCount;
 
   /** Create a cache using an appropriate portion of the available RAM as the maximum size. */
-  public LruCache(Context context) {
+  public LruCache(@NonNull Context context) {
     this(Utils.calculateMemoryCacheSize(context));
   }
 
@@ -45,10 +47,10 @@ public class LruCache implements Cache {
       throw new IllegalArgumentException("Max size must be positive.");
     }
     this.maxSize = maxSize;
-    this.map = new LinkedHashMap<String, Bitmap>(0, 0.75f, true);
+    this.map = new LinkedHashMap<>(0, 0.75f, true);
   }
 
-  @Override public Bitmap get(String key) {
+  @Override public Bitmap get(@NonNull String key) {
     if (key == null) {
       throw new NullPointerException("key == null");
     }
@@ -66,16 +68,20 @@ public class LruCache implements Cache {
     return null;
   }
 
-  @Override public void set(String key, Bitmap bitmap) {
+  @Override public void set(@NonNull String key, @NonNull Bitmap bitmap) {
     if (key == null || bitmap == null) {
       throw new NullPointerException("key == null || bitmap == null");
     }
 
-    Bitmap previous;
+    int addedSize = Utils.getBitmapBytes(bitmap);
+    if (addedSize > maxSize) {
+      return;
+    }
+
     synchronized (this) {
       putCount++;
-      size += Utils.getBitmapBytes(bitmap);
-      previous = map.put(key, bitmap);
+      size += addedSize;
+      Bitmap previous = map.put(key, bitmap);
       if (previous != null) {
         size -= Utils.getBitmapBytes(previous);
       }
@@ -126,7 +132,6 @@ public class LruCache implements Cache {
   }
 
   @Override public final synchronized void clearKeyUri(String uri) {
-    boolean sizeChanged = false;
     int uriLength = uri.length();
     for (Iterator<Map.Entry<String, Bitmap>> i = map.entrySet().iterator(); i.hasNext();) {
       Map.Entry<String, Bitmap> entry = i.next();
@@ -136,11 +141,7 @@ public class LruCache implements Cache {
       if (newlineIndex == uriLength && key.substring(0, newlineIndex).equals(uri)) {
         i.remove();
         size -= Utils.getBitmapBytes(value);
-        sizeChanged = true;
       }
-    }
-    if (sizeChanged) {
-      trimToSize(maxSize);
     }
   }
 

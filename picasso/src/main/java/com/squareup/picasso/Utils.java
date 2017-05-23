@@ -29,31 +29,27 @@ import android.os.Process;
 import android.os.StatFs;
 import android.provider.Settings;
 import android.util.Log;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.List;
 import java.util.concurrent.ThreadFactory;
+import okio.BufferedSource;
+import okio.ByteString;
 
 import static android.content.Context.ACTIVITY_SERVICE;
 import static android.content.pm.ApplicationInfo.FLAG_LARGE_HEAP;
 import static android.os.Build.VERSION.SDK_INT;
-import static android.os.Build.VERSION_CODES.GINGERBREAD;
-import static android.os.Build.VERSION_CODES.HONEYCOMB;
-import static android.os.Build.VERSION_CODES.HONEYCOMB_MR1;
+import static android.os.Build.VERSION_CODES.JELLY_BEAN_MR1;
+import static android.os.Build.VERSION_CODES.JELLY_BEAN_MR2;
+import static android.os.Build.VERSION_CODES.KITKAT;
 import static android.os.Process.THREAD_PRIORITY_BACKGROUND;
-import static android.provider.Settings.System.AIRPLANE_MODE_ON;
 import static com.squareup.picasso.Picasso.TAG;
 import static java.lang.String.format;
 
 final class Utils {
   static final String THREAD_PREFIX = "Picasso-";
   static final String THREAD_IDLE_NAME = THREAD_PREFIX + "Idle";
-  static final int DEFAULT_READ_TIMEOUT_MILLIS = 20 * 1000; // 20s
-  static final int DEFAULT_WRITE_TIMEOUT_MILLIS = 20 * 1000; // 20s
-  static final int DEFAULT_CONNECT_TIMEOUT_MILLIS = 15 * 1000; // 15s
   private static final String PICASSO_CACHE = "picasso-cache";
   private static final int KEY_PADDING = 50; // Determined by exact science.
   private static final int MIN_DISK_CACHE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -98,21 +94,15 @@ final class Utils {
     |      'W'      |      'E'      |      'B'      |      'P'      |
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
   */
-  private static final int WEBP_FILE_HEADER_SIZE = 12;
-  private static final String WEBP_FILE_HEADER_RIFF = "RIFF";
-  private static final String WEBP_FILE_HEADER_WEBP = "WEBP";
+  private static final ByteString WEBP_FILE_HEADER_RIFF = ByteString.encodeUtf8("RIFF");
+  private static final ByteString WEBP_FILE_HEADER_WEBP = ByteString.encodeUtf8("WEBP");
 
   private Utils() {
     // No instances.
   }
 
   static int getBitmapBytes(Bitmap bitmap) {
-    int result;
-    if (SDK_INT >= HONEYCOMB_MR1) {
-      result = BitmapHoneycombMR1.getByteCount(bitmap);
-    } else {
-      result = bitmap.getRowBytes() * bitmap.getHeight();
-    }
+    int result = SDK_INT >= KITKAT ? bitmap.getAllocationByteCount() : bitmap.getByteCount();
     if (result < 0) {
       throw new IllegalStateException("Negative size: " + bitmap);
     }
@@ -202,7 +192,7 @@ final class Utils {
       builder.append(KEY_SEPARATOR);
     }
     if (data.centerCrop) {
-      builder.append("centerCrop").append(KEY_SEPARATOR);
+      builder.append("centerCrop:").append(data.centerCropGravity).append(KEY_SEPARATOR);
     } else if (data.centerInside) {
       builder.append("centerInside").append(KEY_SEPARATOR);
     }
@@ -218,44 +208,6 @@ final class Utils {
     return builder.toString();
   }
 
-  static void closeQuietly(InputStream is) {
-    if (is == null) return;
-    try {
-      is.close();
-    } catch (IOException ignored) {
-    }
-  }
-
-  /** Returns {@code true} if header indicates the response body was loaded from the disk cache. */
-  static boolean parseResponseSourceHeader(String header) {
-    if (header == null) {
-      return false;
-    }
-    String[] parts = header.split(" ", 2);
-    if ("CACHE".equals(parts[0])) {
-      return true;
-    }
-    if (parts.length == 1) {
-      return false;
-    }
-    try {
-      return "CONDITIONAL_CACHE".equals(parts[0]) && Integer.parseInt(parts[1]) == 304;
-    } catch (NumberFormatException e) {
-      return false;
-    }
-  }
-
-  static Downloader createDefaultDownloader(Context context) {
-    if (SDK_INT >= GINGERBREAD) {
-        try {
-          Class.forName("com.squareup.okhttp.OkHttpClient");
-          return OkHttpLoaderCreator.create(context);
-        } catch (ClassNotFoundException ignored) {
-        }
-    }
-    return new UrlConnectionDownloader(context);
-  }
-
   static File createDefaultCacheDir(Context context) {
     File cache = new File(context.getApplicationContext().getCacheDir(), PICASSO_CACHE);
     if (!cache.exists()) {
@@ -265,12 +217,19 @@ final class Utils {
     return cache;
   }
 
+  @TargetApi(JELLY_BEAN_MR2)
   static long calculateDiskCacheSize(File dir) {
     long size = MIN_DISK_CACHE_SIZE;
 
     try {
       StatFs statFs = new StatFs(dir.getAbsolutePath());
-      long available = ((long) statFs.getBlockCount()) * statFs.getBlockSize();
+      //noinspection deprecation
+      long blockCount =
+          SDK_INT < JELLY_BEAN_MR2 ? (long) statFs.getBlockCount() : statFs.getBlockCountLong();
+      //noinspection deprecation
+      long blockSize =
+          SDK_INT < JELLY_BEAN_MR2 ? (long) statFs.getBlockSize() : statFs.getBlockSizeLong();
+      long available = blockCount * blockSize;
       // Target 2% of the total space.
       size = available / 50;
     } catch (IllegalArgumentException ignored) {
@@ -283,21 +242,25 @@ final class Utils {
   static int calculateMemoryCacheSize(Context context) {
     ActivityManager am = getService(context, ACTIVITY_SERVICE);
     boolean largeHeap = (context.getApplicationInfo().flags & FLAG_LARGE_HEAP) != 0;
-    int memoryClass = am.getMemoryClass();
-    if (largeHeap && SDK_INT >= HONEYCOMB) {
-      memoryClass = ActivityManagerHoneycomb.getLargeMemoryClass(am);
-    }
+    int memoryClass = largeHeap ? am.getLargeMemoryClass() : am.getMemoryClass();
     // Target ~15% of the available heap.
-    return 1024 * 1024 * memoryClass / 7;
+    return (int) (1024L * 1024L * memoryClass / 7);
   }
 
   static boolean isAirplaneModeOn(Context context) {
     ContentResolver contentResolver = context.getContentResolver();
     try {
-      return Settings.System.getInt(contentResolver, AIRPLANE_MODE_ON, 0) != 0;
+      if (SDK_INT < JELLY_BEAN_MR1) {
+        //noinspection deprecation
+        return Settings.System.getInt(contentResolver, Settings.System.AIRPLANE_MODE_ON, 0) != 0;
+      }
+      return Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
     } catch (NullPointerException e) {
       // https://github.com/square/picasso/issues/761, some devices might crash here, assume that
       // airplane mode is off.
+      return false;
+    } catch (SecurityException e) {
+      //https://github.com/square/picasso/issues/1197
       return false;
     }
   }
@@ -311,25 +274,9 @@ final class Utils {
     return context.checkCallingOrSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
   }
 
-  static byte[] toByteArray(InputStream input) throws IOException {
-    ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-    byte[] buffer = new byte[1024 * 4];
-    int n;
-    while (-1 != (n = input.read(buffer))) {
-      byteArrayOutputStream.write(buffer, 0, n);
-    }
-    return byteArrayOutputStream.toByteArray();
-  }
-
-  static boolean isWebPFile(InputStream stream) throws IOException {
-    byte[] fileHeaderBytes = new byte[WEBP_FILE_HEADER_SIZE];
-    boolean isWebPFile = false;
-    if (stream.read(fileHeaderBytes, 0, WEBP_FILE_HEADER_SIZE) == WEBP_FILE_HEADER_SIZE) {
-      // If a file's header starts with RIFF and end with WEBP, the file is a WebP file
-      isWebPFile = WEBP_FILE_HEADER_RIFF.equals(new String(fileHeaderBytes, 0, 4, "US-ASCII"))
-          && WEBP_FILE_HEADER_WEBP.equals(new String(fileHeaderBytes, 8, 4, "US-ASCII"));
-    }
-    return isWebPFile;
+  static boolean isWebPFile(BufferedSource source) throws IOException {
+    return source.rangeEquals(0, WEBP_FILE_HEADER_RIFF)
+        && source.rangeEquals(8, WEBP_FILE_HEADER_WEBP);
   }
 
   static int getResourceId(Resources resources, Request data) throws FileNotFoundException {
@@ -390,13 +337,6 @@ final class Utils {
     handler.sendMessageDelayed(handler.obtainMessage(), THREAD_LEAK_CLEANING_MS);
   }
 
-  @TargetApi(HONEYCOMB)
-  private static class ActivityManagerHoneycomb {
-    static int getLargeMemoryClass(ActivityManager activityManager) {
-      return activityManager.getLargeMemoryClass();
-    }
-  }
-
   static class PicassoThreadFactory implements ThreadFactory {
     @SuppressWarnings("NullableProblems")
     public Thread newThread(Runnable r) {
@@ -412,19 +352,6 @@ final class Utils {
     @Override public void run() {
       Process.setThreadPriority(THREAD_PRIORITY_BACKGROUND);
       super.run();
-    }
-  }
-
-  @TargetApi(HONEYCOMB_MR1)
-  private static class BitmapHoneycombMR1 {
-    static int getByteCount(Bitmap bitmap) {
-      return bitmap.getByteCount();
-    }
-  }
-
-  private static class OkHttpLoaderCreator {
-    static Downloader create(Context context) {
-      return new OkHttpDownloader(context);
     }
   }
 }

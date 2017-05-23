@@ -51,7 +51,7 @@ abstract class Action<T> {
     this.picasso = picasso;
     this.request = request;
     this.target =
-        target == null ? null : new RequestWeakReference<T>(this, target, picasso.referenceQueue);
+        target == null ? null : new RequestWeakReference<>(this, target, picasso.referenceQueue);
     this.memoryPolicy = memoryPolicy;
     this.networkPolicy = networkPolicy;
     this.noFade = noFade;
@@ -63,7 +63,7 @@ abstract class Action<T> {
 
   abstract void complete(Bitmap result, Picasso.LoadedFrom from);
 
-  abstract void error();
+  abstract void error(Exception e);
 
   void cancel() {
     cancelled = true;

@@ -29,8 +29,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.annotation.Config;
+import org.robolectric.RobolectricGradleTestRunner;
 
 import static android.content.Context.CONNECTIVITY_SERVICE;
 import static android.content.Intent.ACTION_AIRPLANE_MODE_CHANGED;
@@ -63,8 +62,7 @@ import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
 
-@RunWith(RobolectricTestRunner.class)
-@Config(manifest = Config.NONE)
+@RunWith(RobolectricGradleTestRunner.class)
 public class DispatcherTest {
 
   @Mock Context context;
@@ -182,9 +180,10 @@ public class DispatcherTest {
         new FetchAction(mockPicasso(), new Request.Builder(URI_1).build(), 0, 0, pausedTag,
             URI_KEY_1, callback);
     dispatcher.performSubmit(fetchAction, false);
-    fetchAction.error();
+    Exception e = new RuntimeException();
+    fetchAction.error(e);
 
-    verify(callback).onError();
+    verify(callback).onError(e);
   }
 
   @Test public void performCancelWithFetchActionWithCallback() {
@@ -362,25 +361,21 @@ public class DispatcherTest {
     verify(service).submit(hunter);
   }
 
-  @Test public void performRetryMarksForReplayIfSupportsReplayAndNoConnectivity() {
-    NetworkInfo networkInfo = mockNetworkInfo(false);
+  @Test public void performRetryMarksForReplayIfSupportsReplayAndShouldNotRetry() {
     Action action = mockAction(URI_KEY_1, URI_1, mockTarget());
     BitmapHunter hunter = mockHunter(URI_KEY_1, bitmap1, false, action);
-    when(hunter.shouldRetry(anyBoolean(), any(NetworkInfo.class))).thenReturn(true);
+    when(hunter.shouldRetry(anyBoolean(), any(NetworkInfo.class))).thenReturn(false);
     when(hunter.supportsReplay()).thenReturn(true);
-    when(connectivityManager.getActiveNetworkInfo()).thenReturn(networkInfo);
     dispatcher.performRetry(hunter);
     assertThat(dispatcher.hunterMap).isEmpty();
     assertThat(dispatcher.failedActions).hasSize(1);
     verify(service, never()).submit(hunter);
   }
 
-  @Test public void performRetryRetriesIfHasConnectivity() {
-    NetworkInfo networkInfo = mockNetworkInfo(true);
+  @Test public void performRetryRetriesIfShouldRetry() {
     Action action = mockAction(URI_KEY_1, URI_1, mockTarget());
     BitmapHunter hunter = mockHunter(URI_KEY_1, bitmap1, false, action);
     when(hunter.shouldRetry(anyBoolean(), any(NetworkInfo.class))).thenReturn(true);
-    when(connectivityManager.getActiveNetworkInfo()).thenReturn(networkInfo);
     dispatcher.performRetry(hunter);
     assertThat(dispatcher.hunterMap).isEmpty();
     assertThat(dispatcher.failedActions).isEmpty();

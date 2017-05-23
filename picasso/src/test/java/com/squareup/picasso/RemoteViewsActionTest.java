@@ -16,27 +16,28 @@
 package com.squareup.picasso;
 
 import android.graphics.Bitmap;
+import android.widget.ImageView;
 import android.widget.RemoteViews;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.Robolectric;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.annotation.Config;
+import org.robolectric.RobolectricGradleTestRunner;
+import org.robolectric.RuntimeEnvironment;
 
 import static android.graphics.Bitmap.Config.ARGB_8888;
 import static com.squareup.picasso.Picasso.LoadedFrom.NETWORK;
 import static com.squareup.picasso.Picasso.RequestTransformer.IDENTITY;
 import static com.squareup.picasso.TestUtils.URI_KEY_1;
 import static com.squareup.picasso.TestUtils.makeBitmap;
+import static com.squareup.picasso.TestUtils.mockCallback;
+import static com.squareup.picasso.TestUtils.mockImageViewTarget;
+import static org.fest.assertions.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 
-@RunWith(RobolectricTestRunner.class)
-@Config(manifest = Config.NONE)
-public class RemoteViewsActionTest {
+@RunWith(RobolectricGradleTestRunner.class) public class RemoteViewsActionTest {
 
   private Picasso picasso;
   private RemoteViews remoteViews;
@@ -48,42 +49,62 @@ public class RemoteViewsActionTest {
   }
 
   @Test public void completeSetsBitmapOnRemoteViews() throws Exception {
+    Callback callback = mockCallback();
     Bitmap bitmap = makeBitmap();
-    RemoteViewsAction action = createAction();
+    RemoteViewsAction action = createAction(callback);
     action.complete(bitmap, NETWORK);
     verify(remoteViews).setImageViewBitmap(1, bitmap);
+    verify(callback).onSuccess();
   }
 
   @Test public void errorWithNoResourceIsNoop() throws Exception {
-    RemoteViewsAction action = createAction();
-    action.error();
+    Callback callback = mockCallback();
+    RemoteViewsAction action = createAction(callback);
+    Exception e = new RuntimeException();
+    action.error(e);
     verifyZeroInteractions(remoteViews);
+    verify(callback).onError(e);
   }
 
   @Test public void errorWithResourceSetsResource() throws Exception {
-    RemoteViewsAction action = createAction(1);
-    action.error();
+    Callback callback = mockCallback();
+    RemoteViewsAction action = createAction(1, callback);
+    Exception e = new RuntimeException();
+    action.error(e);
     verify(remoteViews).setImageViewResource(1, 1);
+    verify(callback).onError(e);
   }
 
-  private TestableRemoteViewsAction createAction() {
-    return createAction(0);
+  @Test public void clearsCallbackOnCancel() throws Exception {
+    Picasso picasso = mock(Picasso.class);
+    ImageView target = mockImageViewTarget();
+    Callback callback = mockCallback();
+    ImageViewAction request =
+        new ImageViewAction(picasso, target, null, 0, 0, 0, null, URI_KEY_1, null, callback, false);
+    request.cancel();
+    assertThat(request.callback).isNull();
   }
 
-  private TestableRemoteViewsAction createAction(int errorResId) {
+  private TestableRemoteViewsAction createAction(Callback callback) {
+    return createAction(0, callback);
+  }
+
+  private TestableRemoteViewsAction createAction(int errorResId, Callback callback) {
     return new TestableRemoteViewsAction(picasso, null, remoteViews, 1, errorResId, 0, 0, null,
-        URI_KEY_1);
+        URI_KEY_1, callback);
   }
 
   private Picasso createPicasso() {
-    return new Picasso(Robolectric.application, mock(Dispatcher.class), Cache.NONE, null,
+    return new Picasso(RuntimeEnvironment.application, mock(Dispatcher.class), Cache.NONE, null,
         IDENTITY, null, mock(Stats.class), ARGB_8888, false, false);
   }
 
   static class TestableRemoteViewsAction extends RemoteViewsAction {
     TestableRemoteViewsAction(Picasso picasso, Request data, RemoteViews remoteViews, int viewId,
-        int errorResId, int memoryPolicy, int networkPolicy, String tag, String key) {
-      super(picasso, data, remoteViews, viewId, errorResId, memoryPolicy, networkPolicy, tag, key);
+        int errorResId, int memoryPolicy, int networkPolicy, String tag, String key,
+        Callback callback) {
+      super(picasso, data, remoteViews, viewId, errorResId, memoryPolicy, networkPolicy, tag, key,
+          callback);
     }
 
     @Override void update() {
